@@ -1,0 +1,26 @@
+## .NET Core / Visual Studio Build Artifacts
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+
+## Sensitive Configuration Files
+appsettings.json
+appsettings.Development.json
+appsettings.Production.json
+appsettings.*.local.json
+
+## Whitelist example configuration files
+!appsettings.example.json
+!appsettings.*.example.json
+
+## OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
