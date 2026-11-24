@@ -63,7 +63,17 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        DbInitializer.Initialize(context);
+        
+        // If database currently has the old small starter seed (< 40 users), upgrade to the full Phase 1 dataset
+        if (context.Users.Count() < 40)
+        {
+            Console.WriteLine("Populating database with full Phase 1 dataset (48 customers, 576+ bills)...");
+            DbInitializer.ResetAndSeed(context);
+        }
+        else
+        {
+            DbInitializer.Initialize(context);
+        }
         Console.WriteLine("Database initialization and seed check completed successfully.");
     }
     catch (Exception ex)
