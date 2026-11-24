@@ -198,6 +198,9 @@ namespace MDMS_PRoject_Backend.Migrations
                     b.Property<string>("Id")
                         .HasColumnType("text");
 
+                    b.Property<double>("AverageConsumption")
+                        .HasColumnType("double precision");
+
                     b.PrimitiveCollection<List<double>>("Current")
                         .IsRequired()
                         .HasColumnType("double precision[]");
@@ -205,6 +208,12 @@ namespace MDMS_PRoject_Backend.Migrations
                     b.PrimitiveCollection<List<string>>("Labels")
                         .IsRequired()
                         .HasColumnType("text[]");
+
+                    b.Property<double>("MaxUsage")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("MinUsage")
+                        .HasColumnType("double precision");
 
                     b.PrimitiveCollection<List<double>>("Previous")
                         .IsRequired()
@@ -221,6 +230,9 @@ namespace MDMS_PRoject_Backend.Migrations
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<double>("TotalConsumption")
+                        .HasColumnType("double precision");
 
                     b.HasKey("Id");
 
