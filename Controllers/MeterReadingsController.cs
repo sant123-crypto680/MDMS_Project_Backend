@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MDMS_PRoject_Backend.Data;
 using MDMS_PRoject_Backend.Models;
+using MDMS_PRoject_Backend.Models.Common;
 
 namespace MDMS_PRoject_Backend.Controllers;
 
@@ -16,33 +17,36 @@ public class MeterReadingsController : ControllerBase
         _context = context;
     }
 
+    // GET /api/MeterReadings?meterId=&granularity=&from=&to=&page=1&pageSize=24
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<MeterReading>>> GetMeterReadings(
+    public async Task<IActionResult> GetMeterReadings(
         [FromQuery] string? meterId,
         [FromQuery] string? granularity,
         [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to)
+        [FromQuery] DateTime? to,
+        [FromQuery] int? page = null,
+        [FromQuery] int pageSize = 24)
     {
         var query = _context.MeterReadings.AsQueryable();
 
-        if (!string.IsNullOrEmpty(meterId))
+        if (!string.IsNullOrEmpty(meterId))     query = query.Where(r => r.MeterId == meterId);
+        if (!string.IsNullOrEmpty(granularity)) query = query.Where(r => r.Granularity.ToLower() == granularity.ToLower());
+        if (from.HasValue)                      query = query.Where(r => r.Timestamp >= from.Value);
+        if (to.HasValue)                        query = query.Where(r => r.Timestamp <= to.Value);
+
+        query = query.OrderByDescending(r => r.Timestamp);
+
+        // ── Pagination (dual-mode, default pageSize=24 for hourly data) ──
+        if (page.HasValue)
         {
-            query = query.Where(r => r.MeterId == meterId);
-        }
-        if (!string.IsNullOrEmpty(granularity))
-        {
-            query = query.Where(r => r.Granularity.ToLower() == granularity.ToLower());
-        }
-        if (from.HasValue)
-        {
-            query = query.Where(r => r.Timestamp >= from.Value);
-        }
-        if (to.HasValue)
-        {
-            query = query.Where(r => r.Timestamp <= to.Value);
+            int pg   = Math.Max(1, page.Value);
+            int size = Math.Clamp(pageSize, 1, 200);
+            int total = await query.CountAsync();
+            var items = await query.Skip((pg - 1) * size).Take(size).ToListAsync();
+            return Ok(new PagedResult<MeterReading> { Page = pg, PageSize = size, TotalCount = total, Items = items });
         }
 
-        return await query.OrderByDescending(r => r.Timestamp).ToListAsync();
+        return Ok(await query.ToListAsync());
     }
 
     [HttpGet("{id}")]
