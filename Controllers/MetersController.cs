@@ -17,37 +17,17 @@ public class MetersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Meter>>> GetMeters(
-        [FromQuery] string? ownerId,
-        [FromQuery] string? zoneId,
-        [FromQuery] string? status,
-        [FromQuery] bool? isPrimary)
-    {
-        var query = _context.Meters
-            .Include(m => m.Owner)
-            .Include(m => m.Zone)
-            .Include(m => m.Tariff)
-            .AsQueryable();
+[HttpGet]
+public async Task<ActionResult<IEnumerable<Meter>>> GetMeters(
+    [FromQuery] string userId,
+    [FromQuery] string zoneId)
+{
+    var meters = await _context.Meters
+        .Where(m => m.OwnerId == userId && m.ZoneId == zoneId)
+        .ToListAsync();
 
-        if (!string.IsNullOrEmpty(ownerId))
-        {
-            query = query.Where(m => m.OwnerId == ownerId);
-        }
-        if (!string.IsNullOrEmpty(zoneId))
-        {
-            query = query.Where(m => m.ZoneId == zoneId);
-        }
-        if (!string.IsNullOrEmpty(status))
-        {
-            query = query.Where(m => m.Status.ToLower() == status.ToLower());
-        }
-        if (isPrimary.HasValue)
-        {
-            query = query.Where(m => m.IsPrimary == isPrimary.Value);
-        }
-
-        return await query.ToListAsync();
-    }
+    return Ok(meters);
+}
 
     [HttpGet("{id}")]
     public async Task<ActionResult<Meter>> GetMeter(string id)
