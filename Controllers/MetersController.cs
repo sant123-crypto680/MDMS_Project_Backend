@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MDMS_PRoject_Backend.Data;
 using MDMS_PRoject_Backend.Models;
+using MDMS_PRoject_Backend.Models.Common;
 
 namespace MDMS_PRoject_Backend.Controllers;
 
@@ -16,12 +17,16 @@ public class MetersController : ControllerBase
         _context = context;
     }
 
+    // GET /api/Meters?ownerId=&zoneId=&status=&isPrimary=&sortBy=installed_desc&page=1&pageSize=10
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Meter>>> GetMeters(
+    public async Task<IActionResult> GetMeters(
         [FromQuery] string? ownerId,
         [FromQuery] string? zoneId,
         [FromQuery] string? status,
-        [FromQuery] bool? isPrimary)
+        [FromQuery] bool? isPrimary,
+        [FromQuery] string? sortBy = "installed_desc",
+        [FromQuery] int? page = null,
+        [FromQuery] int pageSize = 10)
     {
         var query = _context.Meters
             .Include(m => m.Owner)
@@ -29,24 +34,31 @@ public class MetersController : ControllerBase
             .Include(m => m.Tariff)
             .AsQueryable();
 
-        if (!string.IsNullOrEmpty(ownerId))
+        if (!string.IsNullOrEmpty(ownerId))  query = query.Where(m => m.OwnerId == ownerId);
+        if (!string.IsNullOrEmpty(zoneId))   query = query.Where(m => m.ZoneId == zoneId);
+        if (!string.IsNullOrEmpty(status))   query = query.Where(m => m.Status.ToLower() == status.ToLower());
+        if (isPrimary.HasValue)              query = query.Where(m => m.IsPrimary == isPrimary.Value);
+
+        // ── Sorting ──
+        query = sortBy switch
         {
-            query = query.Where(m => m.OwnerId == ownerId);
-        }
-        if (!string.IsNullOrEmpty(zoneId))
+            "installed_asc"  => query.OrderBy(m => m.InstalledOn),
+            "reading_desc"   => query.OrderByDescending(m => m.LastReading),
+            "reading_asc"    => query.OrderBy(m => m.LastReading),
+            _                => query.OrderByDescending(m => m.InstalledOn) // installed_desc (default)
+        };
+
+        // ── Pagination (dual-mode) ──
+        if (page.HasValue)
         {
-            query = query.Where(m => m.ZoneId == zoneId);
-        }
-        if (!string.IsNullOrEmpty(status))
-        {
-            query = query.Where(m => m.Status.ToLower() == status.ToLower());
-        }
-        if (isPrimary.HasValue)
-        {
-            query = query.Where(m => m.IsPrimary == isPrimary.Value);
+            int pg   = Math.Max(1, page.Value);
+            int size = Math.Clamp(pageSize, 1, 100);
+            int total = await query.CountAsync();
+            var items = await query.Skip((pg - 1) * size).Take(size).ToListAsync();
+            return Ok(new PagedResult<Meter> { Page = pg, PageSize = size, TotalCount = total, Items = items });
         }
 
-        return await query.ToListAsync();
+        return Ok(await query.ToListAsync());
     }
 
     [HttpGet("{id}")]

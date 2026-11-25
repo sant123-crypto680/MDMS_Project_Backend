@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MDMS_PRoject_Backend.Data;
 using MDMS_PRoject_Backend.Models;
+using MDMS_PRoject_Backend.Models.Common;
 
 namespace MDMS_PRoject_Backend.Controllers;
 
@@ -16,13 +17,19 @@ public class BillsController : ControllerBase
         _context = context;
     }
 
+    // GET /api/Bills?userId=&meterId=&zoneId=&billingMonth=&status=&sortBy=date_desc&page=1&pageSize=10
+    // If ?page is omitted → returns full list (backward compatible).
+    // If ?page is provided → returns PagedResult<Bill>.
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Bill>>> GetBills(
+    public async Task<IActionResult> GetBills(
         [FromQuery] string? userId,
         [FromQuery] string? meterId,
         [FromQuery] string? zoneId,
         [FromQuery] string? billingMonth,
-        [FromQuery] string? status)
+        [FromQuery] string? status,
+        [FromQuery] string? sortBy = "date_desc",
+        [FromQuery] int? page = null,
+        [FromQuery] int pageSize = 10)
     {
         var query = _context.Bills
             .Include(b => b.User)
@@ -30,28 +37,72 @@ public class BillsController : ControllerBase
             .Include(b => b.Zone)
             .AsQueryable();
 
-        if (!string.IsNullOrEmpty(userId))
+        if (!string.IsNullOrEmpty(userId))        query = query.Where(b => b.UserId == userId);
+        if (!string.IsNullOrEmpty(meterId))       query = query.Where(b => b.MeterId == meterId);
+        if (!string.IsNullOrEmpty(zoneId))        query = query.Where(b => b.ZoneId == zoneId);
+        if (!string.IsNullOrEmpty(billingMonth))  query = query.Where(b => b.BillingMonth == billingMonth);
+        if (!string.IsNullOrEmpty(status))        query = query.Where(b => b.Status.ToLower() == status.ToLower());
+
+        // ── Sorting ──
+        query = sortBy switch
         {
-            query = query.Where(b => b.UserId == userId);
-        }
-        if (!string.IsNullOrEmpty(meterId))
+            "date_asc"    => query.OrderBy(b => b.BillingMonth),
+            "amount_desc" => query.OrderByDescending(b => b.Amount),
+            "amount_asc"  => query.OrderBy(b => b.Amount),
+            _             => query.OrderByDescending(b => b.BillingMonth)   // date_desc (default)
+        };
+
+        // ── Pagination (dual-mode) ──
+        if (page.HasValue)
         {
-            query = query.Where(b => b.MeterId == meterId);
-        }
-        if (!string.IsNullOrEmpty(zoneId))
-        {
-            query = query.Where(b => b.ZoneId == zoneId);
-        }
-        if (!string.IsNullOrEmpty(billingMonth))
-        {
-            query = query.Where(b => b.BillingMonth == billingMonth);
-        }
-        if (!string.IsNullOrEmpty(status))
-        {
-            query = query.Where(b => b.Status.ToLower() == status.ToLower());
+            int pg   = Math.Max(1, page.Value);
+            int size = Math.Clamp(pageSize, 1, 100);
+            int total = await query.CountAsync();
+            var items = await query.Skip((pg - 1) * size).Take(size).ToListAsync();
+            return Ok(new PagedResult<Bill> { Page = pg, PageSize = size, TotalCount = total, Items = items });
         }
 
-        return await query.ToListAsync();
+        return Ok(await query.ToListAsync());
+    }
+
+    // GET /api/Bills/user-summary/{userId}  — quick overview for end-user dashboard cards
+    [HttpGet("user-summary/{userId}")]
+    public async Task<IActionResult> GetUserBillSummary(string userId)
+    {
+        var latestBill = await _context.Bills
+            .Where(b => b.UserId == userId)
+            .OrderByDescending(b => b.BillingMonth)
+            .FirstOrDefaultAsync();
+
+        if (latestBill == null)
+            return NotFound(new { message = $"No bills found for user '{userId}'." });
+
+        var primaryMeter = await _context.Meters
+            .Where(m => m.OwnerId == userId && m.IsPrimary)
+            .FirstOrDefaultAsync()
+            ?? await _context.Meters.Where(m => m.OwnerId == userId).FirstOrDefaultAsync();
+
+        var outstandingBalance = await _context.Bills
+            .Where(b => b.UserId == userId && b.Status != "Paid")
+            .SumAsync(b => b.Amount);
+
+        var lastPayment = await _context.Payments
+            .Where(p => p.UserId == userId && p.Status == "Success")
+            .OrderByDescending(p => p.PaidOn)
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            UserId                 = userId,
+            PrimaryMeterId         = primaryMeter?.Id,
+            CurrentConsumptionKwh  = latestBill.TotalUnits,
+            ThisMonthBillAmount    = latestBill.Amount,
+            DueDate                = latestBill.DueDate,
+            BillStatus             = latestBill.Status,
+            OutstandingBalance     = outstandingBalance,
+            LastPaymentAmount      = lastPayment?.AmountPaid,
+            LastPaymentDate        = lastPayment?.PaidOn
+        });
     }
 
     [HttpGet("{id}")]

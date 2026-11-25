@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MDMS_PRoject_Backend.Data;
 using MDMS_PRoject_Backend.Models;
+using MDMS_PRoject_Backend.Models.Common;
 
 namespace MDMS_PRoject_Backend.Controllers;
 
@@ -16,28 +17,34 @@ public class AuditLogsController : ControllerBase
         _context = context;
     }
 
+    // GET /api/AuditLogs?userId=&action=&status=&page=1&pageSize=15
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<AuditLog>>> GetAuditLogs(
+    public async Task<IActionResult> GetAuditLogs(
         [FromQuery] string? userId,
         [FromQuery] string? action,
-        [FromQuery] string? status)
+        [FromQuery] string? status,
+        [FromQuery] int? page = null,
+        [FromQuery] int pageSize = 15)
     {
         var query = _context.AuditLogs.AsQueryable();
 
-        if (!string.IsNullOrEmpty(userId))
+        if (!string.IsNullOrEmpty(userId)) query = query.Where(a => a.UserId == userId);
+        if (!string.IsNullOrEmpty(action)) query = query.Where(a => a.Action.ToLower().Contains(action.ToLower()));
+        if (!string.IsNullOrEmpty(status)) query = query.Where(a => a.Status.ToLower() == status.ToLower());
+
+        query = query.OrderByDescending(a => a.Timestamp);
+
+        // ── Pagination (dual-mode, default pageSize=15 for audit trail) ──
+        if (page.HasValue)
         {
-            query = query.Where(a => a.UserId == userId);
-        }
-        if (!string.IsNullOrEmpty(action))
-        {
-            query = query.Where(a => a.Action.ToLower().Contains(action.ToLower()));
-        }
-        if (!string.IsNullOrEmpty(status))
-        {
-            query = query.Where(a => a.Status.ToLower() == status.ToLower());
+            int pg   = Math.Max(1, page.Value);
+            int size = Math.Clamp(pageSize, 1, 100);
+            int total = await query.CountAsync();
+            var items = await query.Skip((pg - 1) * size).Take(size).ToListAsync();
+            return Ok(new PagedResult<AuditLog> { Page = pg, PageSize = size, TotalCount = total, Items = items });
         }
 
-        return await query.OrderByDescending(a => a.Timestamp).ToListAsync();
+        return Ok(await query.ToListAsync());
     }
 
     [HttpGet("{id}")]

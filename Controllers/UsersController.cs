@@ -16,6 +16,20 @@ public class UsersController : ControllerBase
         _context = context;
     }
 
+    // GET /api/Users/demo-users — returns the 3 known demo accounts (fetched live from DB)
+    [HttpGet("demo-users")]
+    public async Task<ActionResult<IEnumerable<User>>> GetDemoUsers()
+    {
+        var ids = new[] { "USR-001", "USR-002", "USR-006" };
+        var users = await _context.Users
+            .Include(u => u.Zone)
+            .Include(u => u.Meters)
+            .Where(u => ids.Contains(u.Id))
+            .OrderBy(u => u.Id)
+            .ToListAsync();
+        return Ok(users);
+    }
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<User>>> GetUsers(
         [FromQuery] string? role,
